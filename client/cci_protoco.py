@@ -14,14 +14,22 @@ CCI_OK = 100
 CCI_DELIVERY = 101
 CCI_ERROR = 102
 
-
 HEADER_FORMAT = "!BBHI"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 
 def recv_exact(sock: socket.socket, size: int) -> bytes:
-    """Receive exactly size bytes or raise an error."""
-    raise NotImplementedError
+    data = b""
+
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+
+        if not chunk:
+            raise ConnectionError("Server disconnected")
+
+        data += chunk
+
+    return data
 
 
 def send_frame(
@@ -29,30 +37,59 @@ def send_frame(
     message_type: int,
     payload: bytes = b"",
 ) -> None:
-    """Serialize and send one CCI frame."""
-    raise NotImplementedError
+    header = struct.pack(
+        HEADER_FORMAT,
+        CCI_MAGIC,
+        CCI_VERSION,
+        message_type,
+        len(payload),
+    )
+
+    sock.sendall(header + payload)
 
 
 def recv_frame(sock: socket.socket):
-    """Receive and decode one CCI frame."""
-    raise NotImplementedError
+    raw_header = recv_exact(sock, HEADER_SIZE)
+
+    magic, version, message_type, payload_length = \
+        struct.unpack(HEADER_FORMAT, raw_header)
+
+    if magic != CCI_MAGIC:
+        raise ValueError("Invalid CCI magic")
+
+    if version != CCI_VERSION:
+        raise ValueError("Unsupported CCI version")
+
+    payload = recv_exact(sock, payload_length) \
+        if payload_length > 0 else b""
+
+    return message_type, payload
 
 
 def build_register(username: str) -> bytes:
-    raise NotImplementedError
+    return username.encode("utf-8")
 
 
 def build_send(destination: str, body: bytes) -> bytes:
-    raise NotImplementedError
+    destination_bytes = destination.encode("utf-8")
+
+    if len(destination_bytes) > 255:
+        raise ValueError("Destination too long")
+
+    return (
+        bytes([len(destination_bytes)])
+        + destination_bytes
+        + body
+    )
 
 
 def build_fetch() -> bytes:
-    raise NotImplementedError
+    return b""
 
 
 def build_ack(message_id: int) -> bytes:
-    raise NotImplementedError
-
-
-def parse_response(message_type: int, payload: bytes):
-    raise NotImplementedError
+    return message_id.to_bytes(
+        8,
+        byteorder="big",
+        signed=False,
+    )
