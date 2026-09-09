@@ -1,177 +1,92 @@
-Decision is to create a server that will be able to handle upto 10 connection at the same time.
-This is to arbitrary constrain.
-
-The job of a server will be to handle connection with a client. the server only response on clients requests.
-
-I am going to develope a simple TCP protocol Cisco Chat Interview CCI.
-
-This protocol will be structured as follow:
-
-+----------------+ 1 bytes
-| MAGIC          |
-+----------------+ 1 byte
-| VERSION        |
-+----------------+ 4 bytes
-| TYPE           |
-+----------------+ 4 bytes
-| PAYLOAD_LENGTH |
-+----------------+
-| PAYLOAD        | N bytes
-+----------------+
-
-We will hard limit our payload to 2024 bytes. This is so our locacl machine can handle the payload storeded in memory.
-
-For the messages we will handle them as follow.
-
-On a sccessful registration of a client:
-- server will validate wheather the client:  exists / is connected to the server / returns error.
-
-- when the client succesfully connects it will then send a FETCH and request server to send all the messages to the client one by one.
-
-- server will send them in FIFO order 
-
-- to ensure mssages are not lost the client will have to send ACK after reciving them and on then the server will free up the memory and delete the messages from itself
-
-- server will also be responsible for the UUID of the message and it will tag each message with appropiate ID.
-
-
-The server operations for each of the type I chose are:
-
-REGISTER
-    payload: username
-
-SEND
-    payload: destination + body
-    server will generate uint64 msg ID
-
-FETCH
-    payload: empty
-    oldest FIFO msg
-    marks message IN_FLIGHT
-
-ACK
-    payload: message ID
-    remove msg
-
-
-The responses the client can accept are:
-OK
-ERROR
-DELIVERY
-
-if client disconnect and the msg wont be delivered to them the IN_FLIGHT will retry once the client reconnects
-
-reconnect + REGISTER + FETCH -> same message is redeliveredinc
-
-
-
 # CCI Relay — Approach
 
-## 1. Acceptance Criteria
+## Architecture
+The solution is a single C TCP server using POSIX threads.
+Each client connection is handled by a worker thread. The server keeps registered clients and their mailboxes in memory.
 
-TODO
+A small Python client is included to exercise the protocol and run integration tests.
 
-## 2. Architecture
+## Protocol
+CCI uses a custom binary protocol over TCP.
+Each frame contains an 8-byte header:
 
-TODO
+- 1 byte magic
+- 1 byte version
+- 2 byte message type
+- 4 byte payload length
+Multi-byte values use network byte order.
 
-## 3. CCI Protocol
+Supported operations are:
+- `REGISTER`
+- `SEND`
+- `FETCH`
+- `ACK`
 
-### Header
+Server responses are:
+- `OK`
+- `DELIVERY`
+- `ERROR`
 
-| Field | Size |
-|---|---:|
-| Magic | 1 byte |
-| Version | 1 byte |
-| Type | 2 bytes |
-| Payload length | 4 bytes |
+Because TCP is a byte stream, `send_exact()` and `recv_exact()` are used to handle partial reads and writes.
 
-All multi-byte integer fields use network byte order.
+## Message Delivery
+Each registered client has a bounded FIFO mailbox.
 
-### REGISTER
+Messages have two states:
+```text
+QUEUED
+IN_FLIGHT
+```
 
-TODO
 
-### SEND
+FETCH marks the oldest queued message as IN_FLIGHT.
 
-TODO
+A message is removed only after the recipient sends the correct ACK.
 
-### FETCH
+If the client disconnects before acknowledging, the message is changed back to QUEUED and is redelivered after reconnect.
 
-TODO
+This provides at-least-once delivery.
 
-### ACK
+## Concurrency
+The server uses:
 
-TODO
+- one mutex for shared client registry state
+- one mutex per mailbox
+- one worker thread per connection
 
-### OK
+Network I/O is not performed while mailbox locks are held.
 
-TODO
+Delivery is pull-based using FETCH, so a slow recipient does not block another client's SEND operation.
 
-### DELIVERY
+## Resource Limits
+The implementation is intentionally bounded:
 
-TODO
+- 10 active TCP connections
+- 32 registered clients
+- 128 messages per mailbox
+- 1024 byte message bodies
+- 2048 byte protocol payloads
 
-### ERROR
+## Testing
+The project includes:
+state tests for registration, sending, ACKs, reconnect and redelivery
+protocol tests for encoding, decoding and socket framing
+an integration test using the real TCP server
 
-TODO
+Run all tests with:
+`make test`
 
-## 4. Connection Lifecycle
+## Trade-offs / Limitations
+For simplicity and time-boxing:
 
-TODO
+all state is stored in memory
+there is no authentication or encryption
+there is no durable persistence
+only one message per mailbox may be in flight
+worker shutdown is not fully coordinated
 
-## 5. State Model
+A production version would add persistent storage, coordinated shutdown, stronger validation and client idempotency support.
 
-TODO
+AI Usage
 
-## 6. Mailbox Model
-
-FIFO bounded ring buffer.
-
-TODO
-
-## 7. Delivery Semantics
-
-Messages remain stored until acknowledged.
-
-TODO
-
-## 8. Ordering
-
-TODO
-
-## 9. Duplicate Behaviour
-
-TODO
-
-## 10. Concurrency Model
-
-TODO
-
-## 11. Resource Limits
-
-TODO
-
-## 12. Shutdown Behaviour
-
-TODO
-
-## 13. Testing Strategy
-
-TODO
-
-## 14. Trade-offs
-
-TODO
-
-## 15. Known Limitations
-
-TODO
-
-## 16. Next Steps
-
-TODO
-
-## 17. AI Usage
-
-TODO
+AI was used as a design and code-review aid for protocol framing, concurrency, mailbox semantics, testing and debugging. The implementation was compiled and tested incrementally rather than accepting generated suggestions without verification.

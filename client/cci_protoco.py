@@ -32,18 +32,8 @@ def recv_exact(sock: socket.socket, size: int) -> bytes:
     return data
 
 
-def send_frame(
-    sock: socket.socket,
-    message_type: int,
-    payload: bytes = b"",
-) -> None:
-    header = struct.pack(
-        HEADER_FORMAT,
-        CCI_MAGIC,
-        CCI_VERSION,
-        message_type,
-        len(payload),
-    )
+def send_frame(sock: socket.socket, message_type: int, payload: bytes = b"") -> None:
+    header = struct.pack(HEADER_FORMAT, CCI_MAGIC, CCI_VERSION, message_type, len(payload))
 
     sock.sendall(header + payload)
 
@@ -51,8 +41,7 @@ def send_frame(
 def recv_frame(sock: socket.socket):
     raw_header = recv_exact(sock, HEADER_SIZE)
 
-    magic, version, message_type, payload_length = \
-        struct.unpack(HEADER_FORMAT, raw_header)
+    magic, version, message_type, payload_length = struct.unpack(HEADER_FORMAT, raw_header)
 
     if magic != CCI_MAGIC:
         raise ValueError("Invalid CCI magic")
@@ -60,8 +49,7 @@ def recv_frame(sock: socket.socket):
     if version != CCI_VERSION:
         raise ValueError("Unsupported CCI version")
 
-    payload = recv_exact(sock, payload_length) \
-        if payload_length > 0 else b""
+    payload = recv_exact(sock, payload_length) if payload_length > 0 else b""
 
     return message_type, payload
 
@@ -76,11 +64,7 @@ def build_send(destination: str, body: bytes) -> bytes:
     if len(destination_bytes) > 255:
         raise ValueError("Destination too long")
 
-    return (
-        bytes([len(destination_bytes)])
-        + destination_bytes
-        + body
-    )
+    return bytes([len(destination_bytes)]) + destination_bytes + body
 
 
 def build_fetch() -> bytes:
@@ -88,8 +72,4 @@ def build_fetch() -> bytes:
 
 
 def build_ack(message_id: int) -> bytes:
-    return message_id.to_bytes(
-        8,
-        byteorder="big",
-        signed=False,
-    )
+    return message_id.to_bytes(8, byteorder="big", signed=False)

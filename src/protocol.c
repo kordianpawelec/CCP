@@ -136,7 +136,7 @@ int cci_build_frame(CCIFrame *frame, CCIMessageType type, const uint8_t *payload
         return -1;
     }
 
-    if (frame->header.payload_length > CCI_MAX_PAYLOAD) {
+    if (payload_length > CCI_MAX_PAYLOAD) {
         return -1;
     }
 
