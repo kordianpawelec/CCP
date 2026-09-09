@@ -3,6 +3,8 @@
 #include <sys/socket.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+
 
 static int recv_exact(int socket_fd, void *buffer, size_t length)
 {
@@ -94,7 +96,6 @@ int cci_write_frame(int socket_fd, const CCIFrame *frame)
         return -1;
     }
 
-    int rc = -1;
     uint8_t buffer[CCI_HEADER_SIZE];
 
 
@@ -110,8 +111,15 @@ int cci_write_frame(int socket_fd, const CCIFrame *frame)
     buffer[7] = (uint8_t)(frame->header.payload_length & 0xFF);
 
 
+    int rc = send_exact(socket_fd, buffer, CCI_HEADER_SIZE);
+
+    if (rc < 0) {
+        return rc;
+    }
+
+
     if (frame->header.payload_length > 0) {
-       rc = send_exact(socket_fd, buffer, CCI_HEADER_SIZE);
+       rc = send_exact(socket_fd, frame->payload, frame->header.payload_length);
     }
     
     if (rc < 0) {
@@ -128,7 +136,11 @@ int cci_build_frame(CCIFrame *frame, CCIMessageType type, const uint8_t *payload
         return -1;
     }
 
-    if (frame->payload > CCI_MAX_PAYLOAD) {
+    if (frame->header.payload_length > CCI_MAX_PAYLOAD) {
+        return -1;
+    }
+
+    if (payload_length > 0 && payload == NULL) {
         return -1;
     }
 
@@ -214,7 +226,7 @@ int cci_parse_send(const CCIFrame *frame, char *destination, size_t destination_
     return 0;
 }
 
-int cii_parse_ack(const CCIFrame *frame, uint64_t *out_message_id)
+int cci_parse_ack(const CCIFrame *frame, uint64_t *out_message_id)
 {
     if (frame == NULL || out_message_id == NULL || frame->header.type != CCI_ACK) {
         return -1;
@@ -246,7 +258,7 @@ int cci_build_ok(CCIFrame *frame, CCIMessageType operation, uint64_t value)
     payload[0] = (uint8_t)(operation >> 8);
     payload[1] = (uint8_t)(operation & 0xFF);
 
-    for (int b = 0; b < CCI_HEADER_SIZE; i++) {
+    for (int b = 0; b < CCI_HEADER_SIZE; b++) {
         payload[2 + b] = (uint8_t)(value >> (56 - (b * 8)));
     }
 

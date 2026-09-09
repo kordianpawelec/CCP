@@ -31,8 +31,9 @@ static void test_send_fetch_ack(void)
 
 static void test_disconnect_redelivery(void)
 {
-    Client bob = {}
-    Message *msg = 
+    /*
+     * TODO
+     */
 }
 
 
